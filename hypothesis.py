@@ -5,9 +5,10 @@ import numpy as np
 from scipy import stats
 
 from pyspark import SparkContext
+from getTopWords import process
 
 def addWordsToBV():
-    res = ['universal','singapore']
+    top_words = process(os.getcwd() + country_name)
     return res
 
 def setInput(row):
@@ -15,17 +16,16 @@ def setInput(row):
     try:
         tweet = str(inp['tweet'])
         country = str(inp['country'])
-        orgDate = datetime.datetime.strptime(inp['date'], '%Y-%m-%d %H:%M:%S')
+        datee = inp['date'].replace('T', ' ')
+        orgDate = datetime.datetime.strptime(datee, '%Y-%m-%d %H:%M:%S')
         date = str(orgDate.date())
-        x = getTrendScoreFootfall(date,country) 
-        footfall = x[1]
+        
     except KeyError:
         tweet = ""
-        footfall = 0 
         date = ""
         country = ""
 
-    return ((date,country),(tweet,footfall))
+    return ((date,country),(tweet))
 
 
 def calculateRelFreq(row):
@@ -33,11 +33,11 @@ def calculateRelFreq(row):
     country = row[0][1]
     vals = row[1]
     total_words = 0
-    footfall = 0 
+    ff = getTrendScoreFootfall(date,country) 
+    footfall = ff[1]
     res = [0]*len(bvCommonWords.value)
     for t in vals:
-        footfall = t[1]
-        words = re.findall(r'((?:[\.,!?;"])|(?:(?:\#|\@)?[A-Za-z0-9_\-]+(?:\'[a-z]{1,3})?))', t[0].lower())
+        words = re.findall(r'((?:[\.,!?;"])|(?:(?:\#|\@)?[A-Za-z0-9_\-]+(?:\'[a-z]{1,3})?))', t.lower())
         total_words += len(words)
         
         for i in range(0,len(bvCommonWords.value)):
@@ -101,47 +101,75 @@ def helper(x):
         arr.append(i)
     arr.sort(key = lambda x: -x[1])
     
-    output.append(("Top 20 positive words",(arr[:20])))
-    last20 = arr[-20:]
-    last20.reverse()
-    output.append(("Top 20 negative words",(last20)))
+    output.append(("Top 25 positive words",(arr[:25])))
+    last25 = arr[-25:]
+    last25.reverse()
+    output.append(("Top 25 negative words",(last25)))
     return output
 
+
+def getCount(row):
+    date = row[0][0]
+    country = row[0][1]
+    vals = row[1]
+    total_words = 0
+    ff = getTrendScoreFootfall(date,country) 
+    
+    res = {}
+    for i in bvCommonWords.value:
+        res[i]=0
+
+    for t in vals:
+        words = re.findall(r'((?:[\.,!?;"])|(?:(?:\#|\@)?[A-Za-z0-9_\-]+(?:\'[a-z]{1,3})?))', t.lower())
+        for i in res.keys():
+            res[i] += words.count(i)
+    
+    return {"date":date,"country":country,"footfall":ff[1],"trend_score":ff[0],"words":res}
+
+
 if __name__ == "__main__":
-    cloudID = "bda:dXMtZWFzdDEuZ2NwLmVsYXN0aWMtY2xvdWQuY29tOjkyNDMkNDQwZjI0MDg3YTk1NGRmMGJhMmUyNmFjMmYxMmVjYWUkM2RmYTc4NDg2YzczNGVmM2I0ZTFhNTBhZTYwYWQ2YTM="
-    username = "elastic"
-    password = "QtXdCDEPbjSuhzwWN1Ss33tL"
+    cloudID = ""
+    username = ""
+    password = ""
     elastic = ELK(cloudID, username, password)
    
-    #Create index
-    elastic.createIndex("tweets",tweet_mappings)
-    #elastic.createIndex("hypothesis_output",hypothesis_output_mappings)
     
     sc = SparkContext.getOrCreate()
-    #inp = sc.textFile('/content/drive/My Drive/BDAProject/tweets_singapore.csv')
-    inp = sc.parallelize(elastic.getData("tweet",""))
+    
+    inp = sc.parallelize(elastic.getData("tweets",""))
     
     #Add common words to broadcast variable 
     bvCommonWords = sc.broadcast(addWordsToBV())
     
-    #Calculate relative freq for each word
-    wordsRelFreq = inp.map(lambda x: setInput(x)) \
-                      .filter(lambda x: x[1][1]>=0) \
-                      .groupByKey() \
-                      .flatMap(lambda x: calculateRelFreq(x)) \
-                      .groupByKey() \
-                      .map(lambda x:getAllRelFreq(x))
+    inpData = inp.map(lambda x: setInput(x)) \
+                      .groupByKey()
+
+    # #Calculate relative freq for each word
+    wordsRelFreq = inpData.flatMap(lambda x: calculateRelFreq(x)) \
+                          .groupByKey() \
+                          .map(lambda x:getAllRelFreq(x))
     
-    #Calculate beta, pval 
+    # #Calculate beta, pval 
     allBeta = wordsRelFreq.map(lambda x: calculateBeta(x)).groupByKey().flatMap(lambda x: helper(x)).collect()
 
-    #Print results
+    topPosNegWords = []
+    
+    #Print results for top positive and negative words and save this data to Elasticsearch
     for row in allBeta:
         print(row[0])
         print('\n')
         for word in row[1]:
-            print(word)
+            elastic.indexData("hypothesis",float(word[2]))
+            topPosNegWords.append(word[0])
         print('\n')
         print('\n-------------------XXX------------------\n')
+
     
-    sc.stop()
+
+    #Process and save data to elasticsearch for forecasting
+    bvCorrWords = sc.broadcast(topPosNegWords)
+    
+    procOutput = inpData.map(lambda x: getCount(x)).collect()
+
+    for r in procOutput:
+        elastic.indexData("processed_data",r)

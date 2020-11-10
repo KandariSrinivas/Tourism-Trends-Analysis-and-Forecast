@@ -1,6 +1,7 @@
 from elasticsearch import Elasticsearch
-from mappings import *
+from es_mappings import *
 
+# ELK class is for elasticsearch 
 class ELK:
 	def __init__(self,cloudID,username,password):
 		self.es = Elasticsearch(
@@ -27,12 +28,25 @@ class ELK:
 		print("Searching data for index = %s" % indexName)
 		allData = []
 		if query!='':
-			res = self.es.search(index=indexName,body=query)
+			res = self.es.search(index=indexName,body=query,size=10000)
 		else:
-			res = self.es.search(index=indexName)
+			res = self.es.search(index=indexName,size=10000)
 		allRows = res['hits']['hits']
 		for row in allRows:
 			allData.append(row['_source'])
+		return allData
+
+	def getScrollData(self,indexName,query):
+		print("Searching data for index = %s" % indexName)
+		allData = []
+		res = self.es.search(index=indexName,body=query,scroll = '2s')
+       	prevScrollID = res['_scroll_id']
+        while len(res['hits']['hits']):
+            res = self.es.scroll(scroll_id=prevScrollID,scroll = '2s')
+            prevScrollID = resp['_scroll_id']
+            allRows = res['hits']['hits']
+            for row in allRows:
+				allData.append(row['_source'])
 		return allData
 
 	def deleteIndex(self,indexName):
@@ -40,29 +54,19 @@ class ELK:
 		print(self.es.indices.delete(index=indexName, ignore=[400, 404]))
 
 if __name__ == "__main__":
-	cloudID = "bda:dXMtZWFzdDEuZ2NwLmVsYXN0aWMtY2xvdWQuY29tOjkyNDMkNDQwZjI0MDg3YTk1NGRmMGJhMmUyNmFjMmYxMmVjYWUkM2RmYTc4NDg2YzczNGVmM2I0ZTFhNTBhZTYwYWQ2YTM="
-	username = "elastic"
-	password = "QtXdCDEPbjSuhzwWN1Ss33tL"
+	cloudID = ""
+	username = ""
+	password = ""
 	
 	elastic = ELK(cloudID, username, password)
+
 	
 	#Create index
 	elastic.createIndex("tweet",tweet_mappings)
-	
-	data = [{"date":"2019-06-29 23:00:51","country":"Singapore","tweet":"Marina Bay"},
-			{"date":"2019-06-29 23:00:51","country":"Singapore","tweet":"Gardens by the Bay"},
-			{"date":"2019-06-29 23:00:51","country":"Singapore","tweet":"Singapore Zoo"},
-			{"date":"2019-06-29 23:00:51","country":"Singapore","tweet":"Night Safari"},
-			{"date":"2019-06-29 23:00:51","country":"Singapore","tweet":"Hotel Raffles"},
-			{"date":"2019-06-29 23:00:51","country":"Singapore","tweet":"Sentosa"},
-			{"date":"2019-06-29 23:00:51","country":"Singapore","tweet":"Universal Studios"},
-			{"date":"2019-06-29 23:00:51","country":"Singapore","tweet":"SG"},
-			{"date":"2019-06-29 23:00:51","country":"Singapore","tweet":"Singapore"},
-			{"date":"2019-06-29 23:00:51","country":"Singapore","tweet":"Changi"},
-			{"date":"2019-06-29 23:00:51","country":"Singapore","tweet":"F1 SG"}]
+	elastic.createIndex("trends",trends_mappings)
+	elastic.createIndex("hypothesis",hypothesis_output_mappings)
+	elastic.createIndex("processed_data",processed_data_mappings)
 
-	for d in data:
-		elastic.indexData("tweet",d)
 
 
 

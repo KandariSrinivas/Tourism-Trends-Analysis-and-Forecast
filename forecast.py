@@ -39,9 +39,9 @@ def retrainModel(model, X, Y):
 
 def streamJob(model):
     # use this to retrain existing model on new streamed data
-    cloudID = "bda:dXMtZWFzdDEuZ2NwLmVsYXN0aWMtY2xvdWQuY29tOjkyNDMkNDQwZjI0MDg3YTk1NGRmMGJhMmUyNmFjMmYxMmVjYWUkM2RmYTc4NDg2YzczNGVmM2I0ZTFhNTBhZTYwYWQ2YTM="
-    username = "elastic"
-    password = "QtXdCDEPbjSuhzwWN1Ss33tL"
+    cloudID = ""
+    username = ""
+    password = ""
     elastic = ELK(cloudID, username, password)
     data = elastic.getData("hypothesis_output", country, "stream")
 
@@ -55,10 +55,11 @@ def streamJob(model):
 
     model.fit(X,Y)
 
-if __name__ = "__main__":
-    cloudID = "bda:dXMtZWFzdDEuZ2NwLmVsYXN0aWMtY2xvdWQuY29tOjkyNDMkNDQwZjI0MDg3YTk1NGRmMGJhMmUyNmFjMmYxMmVjYWUkM2RmYTc4NDg2YzczNGVmM2I0ZTFhNTBhZTYwYWQ2YTM="
-    username = "elastic"
-    password = "QtXdCDEPbjSuhzwWN1Ss33tL"
+
+if __name__ = "main":
+    cloudID = ""
+    username = ""
+    password = ""
     elastic = ELK(cloudID, username, password)
     data = elastic.getData("hypothesis_output", country)
 
